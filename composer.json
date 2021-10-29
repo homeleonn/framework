@@ -1,0 +1,34 @@
+{
+    "name": "homeleon/framework",
+    "type": "project",
+    "description": "Homeleon framework",
+    "keywords": ["framework", "Homeleon"],
+    "license": "MIT",
+    "authors": [
+        {
+            "name": "Pukhniuk Viktor",
+            "email": "wirus@ukr.net"
+        }
+    ],
+    "require": {
+        "php": ">=8.0",
+        "ext-openssl": "*",
+        "ext-mysqli": "*"
+    },
+    "require-dev": {
+        "phpunit/phpunit": "^9.5"
+    },
+    "autoload": {
+        "files": [
+            "src/Homeleon/Support/helpers.php"
+        ],
+        "psr-4": {
+            "Homeleon\\": "src/Homeleon/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Homeleon\\Tests\\": "tests/"
+        }
+    }
+}
