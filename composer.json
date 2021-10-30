@@ -1,6 +1,5 @@
 {
     "name": "homeleon/framework",
-    "type": "project",
     "description": "Homeleon framework",
     "keywords": ["framework", "Homeleon"],
     "license": "MIT",
