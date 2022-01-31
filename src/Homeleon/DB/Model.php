@@ -9,15 +9,17 @@ class Model
 {
     protected string $table = '';
     protected string $primaryKey = 'id';
-    protected $attr;
+    protected $attr = [];
     protected $original = [];
 
     public function __construct(?array $attr = null)
     {
+        if (!empty($attr)) {
+            $this->attr = $attr;
+        }
+
         if ($this->attr) {
-            $this->original = $this->attr;
-        } else {
-            $this->attr = $attr ?? [];
+            $this->fillOriginalValues();
         }
 
         if (!$this->table) {
@@ -25,8 +27,25 @@ class Model
         }
     }
 
+    private function fillOriginalValues(?array $values = null)
+    {
+        foreach ($values ?? $this->attr as $k => $v) {
+            $this->original[$k] = &$this->attr[$k];
+        }
+    }
+
+    protected function getTableName()
+    {
+        return $this->table;
+    }
+
     public static function identifyTableName(): string
     {
+        $defaultTableName = (new \ReflectionProperty(static::class, 'table'))->getDefaultValue();
+        if ($defaultTableName) {
+            return $defaultTableName;
+        }
+
         $caller = strtolower(Str::lastPart(static::class, '\\'));
 
         return Str::plural($caller);
@@ -47,7 +66,7 @@ class Model
     public function delete()
     {
         if ($id = $this->getId()) {
-            return DB::query("DELETE FROM {$this->table} WHERE {$this->primaryKey} = {$id}");
+            return DB::query("DELETE FROM {$this->table} WHERE {$this->primaryKey} = {$id} LIMIT 1");
         }
 
         return false;
@@ -55,14 +74,16 @@ class Model
 
     public function save(): ?static
     {
+        // dd($this->attr, $this->original);
         $insert = array_diff_assoc($this->attr, $this->original);
 
         if (empty($insert)) {
             return null;
         }
 
+        $this->fillOriginalValues($insert);
         $id         = $this->getId();
-        $isExists   = $id ? static::count()->where($this->primaryKey, $id)->first() : false;
+        $isExists   = $id ? DB::table($this->table)->count()->where($this->primaryKey, $id)->first() : false;
 
         if ($isExists) {
             $set = $this->prepareSet($insert);
@@ -75,7 +96,7 @@ class Model
         DB::query($query);
 
         if (!$isExists && $id = DB::insertId()) {
-            return static::find($id);
+            $this->setAttributes(static::find($id)->getAttributes());
         }
 
         return $this;
@@ -104,6 +125,28 @@ class Model
         return [$insertColumns, $preparedValues, $onDuplicate];
     }
 
+    public function only(...$fields)
+    {
+        $only = [];
+
+        foreach ($fields as $key) {
+            $only[$key] = $this->attr[$key];
+        }
+
+        return $only;
+    }
+
+    public function getAttributes()
+    {
+        return $this->attr;
+    }
+
+    public function setAttributes($attr)
+    {
+        $this->attr = $attr;
+        $this->fillOriginalValues();
+    }
+
     public function __get($key)
     {
         return $this->attr[$key] ?? null;
@@ -111,14 +154,27 @@ class Model
 
     public function __set($key, $value)
     {
-        if (is_null($this->attr)) {
-            $this->attr = [];
+        if (isset($this->attr[$key])) unset($this->attr[$key]);
+
+        $mutatorName = 'set'.ucfirst($key).'Attr';
+        if (method_exists([$this, $mutatorName])) {
+            return $this->{$mutatorName}($value);
         }
 
-        return $this->attr[$key] = Str::toNum($value);
+        return $this->attr[$key] = $value;
     }
 
-    public function __call(string $method, array $args)
+    public function __isset($key)
+    {
+        return isset($this->attr[$key]);
+    }
+
+    public function __unset($key)
+    {
+        unset($this->attr[$key]);
+    }
+
+    public function __call($method, $args)
     {
         return DB::table($this->table, $this::class)->$method(...$args);
     }

@@ -2,8 +2,8 @@
 
 namespace Homeleon\Config;
 
-use Homeleon\Support\ServiceProvider;
 use Exception;
+use Homeleon\Support\ServiceProvider;
 
 class ConfigServiceProvider extends ServiceProvider
 {

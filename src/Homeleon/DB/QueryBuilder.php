@@ -55,6 +55,13 @@ class QueryBuilder
         return $this;
     }
 
+    public function whereIn(string $field, array $values)
+    {
+        $this->builder['where_in'][$field] = $values;
+
+        return $this;
+    }
+
     public function orderBy($field, $order = 'ASC'): self
     {
         $this->builder['order_by'][$field] = $order;
@@ -64,9 +71,9 @@ class QueryBuilder
 
     public function limit($offset, $count = null): self
     {
-       $this->builder['limit'] = " LIMIT {$offset}" . ($count ? ", {$count}" : '');
+        $this->builder['limit'] = " LIMIT {$offset}" . ($count ? ", {$count}" : '');
 
-       return $this;
+        return $this;
     }
 
     public function select(...$fields): self
@@ -82,15 +89,16 @@ class QueryBuilder
                     ? "{$this->builder['table']} as {$this->builder['table_alias']}"
                     : "{$this->builder['table']}";
         $fields     = $this->prepareFields($this->builder['fields'] ?? ($fields ?: null));
-        $where      = $this->join($this->builder['where'] ?? null, ' WHERE ');
-        $andWhere   = $this->join($this->builder['and_where'] ?? null, ' AND ');
-        $orWhere    = $this->join($this->builder['or_where'] ?? null, ' OR ');
-        $orderBy    = $this->prepareOrderBy($this->builder['order_by'] ?? null);
-        $limit      = $this->builder['limit'] ?? '';
+        $where      = $this->prepareConditions();
 
-        $this->result = "SELECT {$fields} FROM {$table}{$where}{$andWhere}{$orWhere}{$orderBy}{$limit}";
+        $this->result = "SELECT {$fields} FROM {$table}{$where}";
 
         return $this->result;
+    }
+
+    private function getLimit()
+    {
+        return $this->builder['limit'] ?? '';
     }
 
     public function first()
@@ -112,13 +120,83 @@ class QueryBuilder
         return $this->first();
     }
 
+    public function by($column)
+    {
+        $this->builder['by'] = $column;
+
+        return $this;
+    }
+
+    public function insert(array $strings)
+    {
+        $fields = implode(', ', array_keys($strings[0]));
+
+        $values = [];
+        foreach ($strings as $string) {
+            $values[] = implode(', ', array_map(
+                fn ($value) => $this->connection->escapeString($value),
+                array_values($string)
+            ));
+        }
+        $values = implode('), (', $values);
+
+        $query = "INSERT INTO {$this->builder['table']} ({$fields}) VALUES ({$values})";
+        $this->connection->query($query);
+
+        // dd($query);
+    }
+
+    public function update(array $values)
+    {
+        $where = $this->prepareConditions();
+        $set  = substr($this->join($values, ', '), 1);
+        $q    = "UPDATE {$this->builder['table']} SET
+                {$set}
+            $where";
+        // dd($q);
+        $this->connection->query($q);
+    }
+
+    public function delete()
+    {
+        $where = $this->prepareConditions();
+        $q = "DELETE FROM {$this->builder['table']}{$where}";
+        $this->connection->query($q);
+    }
+
+    private function prepareConditions(): string
+    {
+        return $this->join('where', ' WHERE ')
+             . $this->join('and_where', ' AND ')
+             . $this->join('or_where', ' OR ')
+             . $this->in()
+             . $this->prepareOrderBy($this->builder['order_by'] ?? null)
+             . $this->getLimit();
+    }
+
+    private function in()
+    {
+        if (!isset($this->builder['where_in'])) return '';
+
+        $where = isset($this->builder['where']) ? ' AND ' : ' WHERE ';
+        $s = '';
+        foreach ($this->builder['where_in'] as $field => $values) {
+            $values = implode(', ', $this->escapeArr($values));
+            $s .= "{$where}{$field} IN({$values})";
+        }
+
+        return $s;
+    }
+
     public function query(string $type)
     {
         $this->connection->setModel($this->model);
 
-        $result = $this->connection->{"get{$type}"}($this->getResult());
+        if (isset($this->builder['by'])) {
+            return $this->connection->{"getInd"}($this->builder['by'], $this->getResult());
+        }
 
-        return $result;
+        return $this->connection->{"get{$type}"}($this->getResult());
     }
 
     public function getResult()
@@ -135,9 +213,10 @@ class QueryBuilder
         return $result;
     }
 
-    public function join($values, $sep = '', $equals = '=', $tableName = true): string
+    public function join($builderKey, $sep = '', $equals = '=', $tableName = true): string
     {
-        if (is_null($values)) return '';
+        $values = is_string($builderKey) ? ($this->builder[$builderKey] ?? null) : $builderKey;
+        if (!isset($values)) return '';
 
         $preparedValues = $this->escapeArr($values);
         $tableName = $tableName ? '`' . $this->getTableName() . '`.' : '';

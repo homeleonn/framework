@@ -22,11 +22,13 @@ class Server
     private $eventsHandlers = [];
     private $dosProtection;
     private $periodicEventWorker;
+    private $ssl;
 
-    public function __construct($ip = "127.0.0.1", $port = '8080')
+    public function __construct($ip = "127.0.0.1", $port = '8080', $ssl = null)
     {
-        $this->ip     = $ip;
+        $this->ip   = $ip;
         $this->port = $port;
+        $this->ssl  = $ssl;
     }
 
     public function setDosProtection(DosProtectionInterface $dosProtection)
@@ -50,16 +52,32 @@ class Server
 
     public function start()
     {
-        $this->socket = stream_socket_server(sprintf('tcp://%s:%s', $this->ip, $this->port), $errno, $errstr);
+        if ($this->ssl) {
+            $context = stream_context_create();
+            stream_context_set_option($context, 'ssl', 'local_cert', $this->ssl);
+            stream_context_set_option($context, 'ssl', 'passphrase', '');
+            stream_context_set_option($context, 'ssl', 'allow_self_signed', true);
+            stream_context_set_option($context, 'ssl', 'verify_peer', false);
+            stream_context_set_option($context, 'ssl', 'verify_peer_name', false);
+
+            $this->socket = stream_socket_server(sprintf('ssl://%s:%s', $this->ip, $this->port), $errno, $errstr, STREAM_SERVER_BIND | STREAM_SERVER_LISTEN, $context);
+        } else {
+            $this->socket = stream_socket_server(sprintf('tcp://%s:%s', $this->ip, $this->port), $errno, $errstr);
+        }
+
         $this->applyEventHandler('start');
 
         while (true) {
             $read = $this->fds;
             $read[-1] = $this->socket;
 
-            if (stream_select($read, $write, $except, $this->periodicEventWorker->getTimeout()) === false) break;
+            $periodicTimeout = $this->periodicEventWorker->getTimeout();
+            if (stream_select($read, $write, $except, $periodicTimeout) === false) break;
 
-            $this->periodicEventWorker->execute();
+            if (!isset($time) || time() >= $time + $periodicTimeout) {
+                $time = time();
+                $this->periodicEventWorker->execute();
+            }
 
             if (isset($read[-1])) {
                 $this->open(stream_socket_accept($this->socket, -1));
@@ -99,14 +117,14 @@ class Server
         fclose($fd);
     }
 
-    public function push($fd, $message)
+    public function push($fd, $message, $type = 'text')
     {
         if (!isset($this->fds[$fd])) {
             // var_dump(debug_backtrace());
             // foreach (debug_backtrace() as $debug) { echo "{$debug['file']}/{$debug['line']}/{$debug['function']}\n"; }
             echo "Connection null. fd: $fd. ", __FILE__, __LINE__, "\n message: ", print_r($message);return;
         }
-        fwrite($this->fds[$fd], Frame::encode($message));
+        fwrite($this->fds[$fd], Frame::encode($message, $type));
     }
 
     public function applyEventHandler(string $handlerName, array $arguments = [])

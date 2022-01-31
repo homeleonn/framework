@@ -18,7 +18,7 @@ class MySQL
 		'user'      => 'root',
 		'pass'      => '',
 		'db'        => 'test',
-		'port'      => null,
+		'port'      => 3306,
 		'socket'    => null,
 		'pconnect'  => false,
 		'lazy'  	=> true,
@@ -210,10 +210,13 @@ class MySQL
 	{
 		$start = microtime(true);
 		$res   = mysqli_query($this->conn, $query);
+        // $res   = 1;
+        $timer = (microtime(true) - $start);
+        // $this->debug("$query:$timer\n");
     	$this->stats[] = [
 			'query' => $query,
 			'start' => $start,
-            'timer' => (microtime(true) - $start),
+            'timer' => $timer,
 		];
 		if (!$res) {
 			$error = mysqli_error($this->conn);
@@ -224,6 +227,28 @@ class MySQL
 
 		return $res;
 	}
+
+    private function debug($string)
+    {
+        if (isProd()) return;
+
+        $startBack  = 7;
+        $end        = 3;
+        $length     = $startBack - $end;
+        $dbg        = debug_backtrace();
+        $trc        = [];
+        while ($length--) {
+            if (!isset($dbg[$startBack]['file'])) {
+                $startBack--;
+                continue;
+            }
+            $trc[] = $dbg[$startBack]['file'].':'.$dbg[$startBack]['line'];
+            $startBack--;
+        }
+        // $dbg = debug_backtrace()[4];
+        d($trc, $string);
+        // echo ($string);
+    }
 
     public function prepareQuery($args)
 	{
@@ -259,6 +284,16 @@ class MySQL
 
 		return $query;
 	}
+
+    public function beginTransaction(?string $name = null, int $flags = 0): bool
+    {
+        return mysqli_begin_transaction($this->conn, $flags, $name);
+    }
+
+    public function commit(?string $name = null, int $flags = 0): bool
+    {
+        return mysqli_commit($this->conn, $flags, $name);
+    }
 
     private function escapeInt($value)
 	{
@@ -379,4 +414,9 @@ class MySQL
 	{
 		return $this->conn ?? $this->lazyConnect();
 	}
+
+    public function ping()
+    {
+        mysqli_ping($this->conn);
+    }
 }

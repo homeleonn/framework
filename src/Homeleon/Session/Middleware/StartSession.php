@@ -5,6 +5,7 @@ namespace Homeleon\Session\Middleware;
 use Closure;
 use Homeleon\Support\Facades\Session;
 use Homeleon\Http\Request;
+use Homeleon\Http\Response;
 use Homeleon\Support\MiddlewareInterface;
 
 class StartSession implements MiddlewareInterface
@@ -16,11 +17,9 @@ class StartSession implements MiddlewareInterface
 
         $sessionStart = true;
 
-        if (isset($request->server['HTTP_REFERER'])) {
-            $parsedReferer = parse_url($request->server['HTTP_REFERER']);
-            if ($parsedReferer['host'] != $request->server['HTTP_HOST'])  {
-                $sessionStart = false;
-            }
+        // Prevent creating session file for development mode
+        if (isDev() && isset($request->server['HTTP_REFERER']) && $request->server['HTTP_REFERER'] == 'http://localhost:8080/') {
+            $sessionStart = false;
         }
 
         if ($sessionStart) {
@@ -30,9 +29,10 @@ class StartSession implements MiddlewareInterface
 
         $response = $next($request);
 
-        if ($sessionStart) {
+        if ($sessionStart && !($response instanceof (Response::class) && $response->isRedirect())) {
             Session::del('_flash');
             Session::del('_errors');
+            Session::del('_old');
         }
 
         return $response;

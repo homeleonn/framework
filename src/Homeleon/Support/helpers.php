@@ -11,10 +11,29 @@ function dd(...$args) {
     exit;
 }
 
-function vd(){
+function vd(...$args) {
     $trace = debug_backtrace()[1];
-    echo '<small style="color: green;"><pre>',$trace['file'],':',$trace['line'],':</pre></small><pre>';
-    call_user_func_array('var_dump', func_get_args());
+    $file = explode('\\', $trace['file']);
+    $fileLine = end($file) . ':' . $trace['line'];
+    if (isCli()) {
+        echo "{$fileLine}\n";
+    } else {
+        echo '<small style="color: green;"><pre>',$fileLine,':</pre></small><pre>';
+    }
+    call_user_func_array('var_dump', $args);
+    echo '</pre>';
+}
+
+function isCli() {
+    return (php_sapi_name() === 'cli');
+}
+
+function isProd() {
+    return Config::get('env') === 'prod';
+}
+
+function isDev() {
+    return Config::get('env') === 'dev';
 }
 
 function s($name = null, $value = false) {
@@ -32,6 +51,14 @@ function s($name = null, $value = false) {
     return $session->get($name);
 }
 
+function old($field) {
+    return s('_old')[$field] ?? null;
+}
+
+function flash($field) {
+    return s('_flash')[$field] ?? null;
+}
+
 function csrf_token() {
     Session::set('_token', Config::get('csrf_token'));
     return s('_token');
@@ -47,7 +74,7 @@ function generatePasswordHash($password): string {
 }
 
 function view(string $view, array $args = []) {
-    $view = ROOT . '/' . 'resources/views/' . $view . '.php';
+    $view = ROOT . '/' . 'resources/views/' . str_replace('.', '/', $view) . '.php';
     if (!file_exists($view)) {
         throw new Exception("View file `{$view}` not exists.");
     }
@@ -57,6 +84,7 @@ function view(string $view, array $args = []) {
 }
 
 function viewBuffer($viewPath, $args) {
+    global $errors;
     extract($args);
     ob_start();
     include $viewPath;
