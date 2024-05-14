@@ -49,14 +49,28 @@ class Router
         return $this->addRoute('post', $uri, $callback);
     }
 
+    public function options(string $uri, $callback): self
+    {
+        return $this->addRoute('options', $uri, $callback);
+    }
+
     private function addRoute(string $method, string $uri, $callback): self
     {
         $uri = Str::addStartSlash($uri);
         $route = new Route($method, $uri, $callback);
         $this->routes[] = $route;
+        $patchingRoutes = [$route];
+
+        if (isset($this->groupOptions['middleware']) && $this->groupOptions['middleware'] == 'api') {
+            $optionRoute = new Route('options', $uri, function(){});
+            $this->routes[] = $optionRoute;
+            $patchingRoutes[] = $optionRoute;
+        }
 
         foreach ($this->groupOptions as $option => $value) {
-            $route->{$option}($value);
+            array_map(function ($route) use ($option, $value) {
+                $route->{$option}($value);
+            }, $patchingRoutes);
         }
 
         $this->lastRoute = $route;
@@ -94,7 +108,6 @@ class Router
 
     public function name(string $name): self
     {
-
         array_pop($this->routes);
         $this->routes[$name] = $this->lastRoute;
 

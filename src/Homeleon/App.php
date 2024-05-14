@@ -13,15 +13,17 @@ class App
     protected array $container = [];
     private string $projectDir;
 
-    public function __construct()
+    public function __construct(bool $loadRoutes = true)
     {
         $this->setProjectDir();
         $this->coreAliasesRegister();
         $config = require  ROOT . '/config/app.php';
         Facade::setFacadeApplication($this, $config['aliases']);
         $servicesInstances = $this->loadServices($config['providers']);
-        $this->make(Router::class)
-            ->setMiddlewareGroups($config['middlewareGroups']);
+        if ($loadRoutes) {
+            $this->make(Router::class)
+                ->setMiddlewareGroups($config['middlewareGroups']);
+        }
         $this->bootServices($servicesInstances);
         $this->checkKey();
     }
