@@ -17,9 +17,21 @@ class Router
     private $lastRoute;
     private $groupOptions = [];
     private $routeMiddleware = [
-        'auth' => \App\Middleware\AuthMiddleware::class,
-        'guest' => \App\Middleware\GuestMiddleware::class,
+        'auth' => [\App\Middleware\AuthMiddleware::class],
+        'guest' => [\App\Middleware\GuestMiddleware::class],
     ];
+
+    public function setMiddlewareGroups(array $middlewareGroups): void
+    {
+        foreach ($middlewareGroups as $group => $middlewares) {
+            $this->routeMiddleware[$group] = $middlewares;
+        }
+    }
+
+    public function getMiddlewareGroup(string $group): array
+    {
+        return $this->routeMiddleware[$group] ?? [];
+    }
 
     public function __construct(Request $request, Response $response)
     {
@@ -29,50 +41,60 @@ class Router
 
     public function get(string $uri,  $callback): self
     {
-        $this->addRoute('get', $uri, $callback);
-
-        return $this;
+        return $this->addRoute('get', $uri, $callback);
     }
 
     public function post(string $uri, $callback): self
     {
-        $this->addRoute('post', $uri, $callback);
-
-        return $this;
+        return $this->addRoute('post', $uri, $callback);
     }
 
-    private function addRoute(string $method, string $uri, $callback)
+    private function addRoute(string $method, string $uri, $callback): self
     {
         $uri = Str::addStartSlash($uri);
         $route = new Route($method, $uri, $callback);
         $this->routes[] = $route;
-
-        $this->setRequiredMiddleware($route);
-
-        if (empty($this->groupOptions)) return;
 
         foreach ($this->groupOptions as $option => $value) {
             $route->{$option}($value);
         }
 
         $this->lastRoute = $route;
+
+        return $this;
     }
 
-    public function setRequiredMiddleware($route): void
+    public function prefix(string $prefix): self
     {
-        $route->middleware(\Homeleon\Session\Middleware\StartSession::class);
-        $route->middleware(\Homeleon\Session\Middleware\ValidateCsrfToken::class);
+        $this->groupOptions['prefix'] = $prefix;
+
+        return $this;
     }
 
-    public function group(array $options, Closure $register): void
+    public function group(string|array|Closure $options, Closure $register = null): void
     {
-        $this->groupOptions = $options;
+        if ($options instanceof Closure) {
+            $register = $options;
+            $options = [];
+        } elseif (is_string($options)) {
+            if (!file_exists($options)) {
+                throw new Exception('Route file not found: ' . $options);
+            }
+
+            $register = function () use ($options) {
+                require $options;
+            };
+            $options = [];
+        }
+
+        $this->groupOptions = array_merge($this->groupOptions, $options);
         $register();
         $this->groupOptions = [];
     }
 
     public function name(string $name): self
     {
+
         array_pop($this->routes);
         $this->routes[$name] = $this->lastRoute;
 
@@ -90,7 +112,7 @@ class Router
 
     public function middleware(string $middleware): self
     {
-        $this->lastRoute->middleware($middleware);
+        $this->groupOptions['middleware'] = $middleware;
 
         return $this;
     }
@@ -170,9 +192,9 @@ class Router
                     return $pipe($passable, $stack);
                 }
 
-                if (!class_exists($pipe) && !$pipe = $this->checkMiddleware($pipe)) {
-                    throw new Exception("Middleware {$pipe} not found");
-                }
+//                if (!class_exists($pipe) && !$pipe = $this->checkMiddleware($pipe)) {
+//                    throw new Exception("Middleware {$pipe} not found");
+//                }
 
                 $res = (new $pipe)->handle($passable, $stack);
 
@@ -190,4 +212,10 @@ class Router
 
         throw new Exception("Middleware {$middleware} not found");
     }
+
+    public static function pattern(string $param, string $pattern): void
+    {
+        Route::$globalPatterns[$param] = $pattern;
+    }
 }
+

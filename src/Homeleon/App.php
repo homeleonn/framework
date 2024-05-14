@@ -2,8 +2,8 @@
 
 namespace Homeleon;
 
+use Homeleon\Router\Router;
 use Homeleon\Support\Facades\Facade;
-use Homeleon\Support\Facades\Response;
 use Closure;
 use Exception;
 use ReflectionClass;
@@ -20,6 +20,8 @@ class App
         $config = require  ROOT . '/config/app.php';
         Facade::setFacadeApplication($this, $config['aliases']);
         $servicesInstances = $this->loadServices($config['providers']);
+        $this->make(Router::class)
+            ->setMiddlewareGroups($config['middlewareGroups']);
         $this->bootServices($servicesInstances);
         $this->checkKey();
     }
@@ -154,11 +156,15 @@ class App
             if ($response->isRedirect()) {
                 $response->setRedirect();
             } else {
-                echo $response->getContent();
+                $response = $response->getContent();
             }
-        } else {
-            echo $response;
         }
+
+        if (is_array($response)) {
+            $response = json_encode($response);
+        }
+
+        echo $response;
     }
 
     public function __get($key)
